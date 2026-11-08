@@ -579,7 +579,10 @@ async function submitAuth(mode){
   setAuthMessage(mode==='signup'?'Creating your account…':'Signing in…');
   try{
     const result=mode==='signup'
-      ?await cloudClient.auth.signUp({email,password})
+      ?await cloudClient.auth.signUp({
+        email,password,
+        options:{emailRedirectTo:new URL('/Today.html',window.location.origin).href}
+      })
       :await cloudClient.auth.signInWithPassword({email,password});
     if(result.error)throw result.error;
     if(mode==='signup'&&!result.data.session){
