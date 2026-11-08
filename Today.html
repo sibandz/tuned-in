@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Today</title>
+<meta name="theme-color" content="#5B6E5F">
+<meta name="description" content="A calm, simple planner for your day.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Today">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet">
 <style>
@@ -435,6 +443,9 @@ let tries=0;
 (function go(){if(window.claude&&claude.use)initSync();else if(++tries<20)setTimeout(go,300);else setSync('off')})();
 setInterval(()=>{render();check()},20000);
 applyTheme();syncUI();render();check();
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(error=>console.error('App offline support could not be enabled:',error)));
+}
 </script>
 </body>
 </html>
