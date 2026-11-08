@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Today">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet">
@@ -76,9 +76,11 @@ li.done .t{color:var(--mute);text-decoration:line-through}
 .empty{color:var(--mute);text-align:center;padding:36px 0}
 .count{color:var(--mute);font-size:13px;margin:0 0 8px}
 .hint{color:var(--mute);font-size:13px;margin-top:22px}
-.top{display:flex;justify-content:flex-end;gap:4px;margin:-8px 0 8px}
+.top{display:flex;justify-content:flex-start;align-items:center;gap:8px;margin:-8px 0 8px}
 .top button{width:36px;height:36px;border-radius:50%;color:var(--mute);display:grid;place-items:center}
 .top button:hover{background:var(--surface);color:var(--ink)}
+.top #viewBtn,.top #themeBtn,.top #gear{margin-left:auto}
+.top #viewBtn~#themeBtn,.top #viewBtn~#gear{margin-left:0}
 dialog{border:0;border-radius:22px;background:var(--surface);color:var(--ink);padding:0;width:min(440px,calc(100% - 24px));max-height:calc(100% - 48px)}
 dialog::backdrop{background:rgba(20,24,21,.45)}
 .in{padding:22px 20px 18px}
@@ -100,10 +102,18 @@ select,input[type=time]{font:inherit;font-size:14px;color:var(--ink);background:
 #toast{position:fixed;inset:auto;margin:0;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 12px);width:min(440px,calc(100% - 24px));background:var(--forest);color:var(--forest-ink);border:0;border-radius:16px;padding:14px 16px;box-shadow:0 8px 30px rgba(0,0,0,.18)}
 #toast:popover-open{display:flex;gap:12px;justify-content:space-between;align-items:center}
 #toast button{flex:none;opacity:.8}
-.pill{margin-right:auto;align-self:center;font-size:13px;color:var(--mute)}
 .top .vb{width:auto;padding:0 14px;border-radius:18px;font-size:14px}
-.top #accountBtn{width:auto;padding:0 14px;border-radius:18px;font-size:14px;background:var(--surface);color:var(--ink)}
+.top #accountBtn{width:auto;max-width:min(320px,50vw);height:40px;padding:4px 12px 4px 5px;display:flex;align-items:center;gap:9px;border-radius:22px;background:var(--surface);color:var(--ink)}
 .top #accountBtn.signed-in{background:var(--forest-soft);color:var(--forest)}
+.avatar{width:30px;height:30px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:50%;background:var(--forest);color:var(--forest-ink);font-size:13px;font-weight:600}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.account-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.profile-card{display:flex;align-items:center;gap:14px;margin:18px 0}
+.profile-card .avatar{width:56px;height:56px;font-size:20px}
+.profile-details{display:flex;flex-direction:column;min-width:0}
+.profile-details strong{overflow-wrap:anywhere}
+.profile-details small{color:var(--mute)}
+.profile-status{color:var(--mute);font-size:14px;margin:10px 0}
 .t{display:flex;align-items:center;gap:10px;text-align:left;color:inherit}
 .dot{flex:none;width:10px;height:10px;border-radius:50%}
 .tt{display:flex;flex-direction:column;min-width:0}
@@ -161,14 +171,19 @@ form.auth{display:grid;gap:12px;margin-top:18px}
   .empty{padding:56px 0}
 }
 @media(max-width:759px){
-  .top #accountBtn{padding:0 10px;font-size:13px}
+  .top #accountBtn{padding-right:10px}
+  .account-label{font-size:13px}
 }
-@media (prefers-reduced-motion:no-preference){.chk,.day,.next{transition:background .2s,color .2s}}
+@media (prefers-reduced-motion:no-preference){
+  body,button,input,textarea,select,dialog,li,.day,.mc,.chk,.next,.carry,.seg,.sw,.avatar{
+    transition:color 260ms ease,background-color 260ms ease,border-color 260ms ease,box-shadow 260ms ease,text-decoration-color 260ms ease
+  }
+}
 </style>
 </head>
 <body>
 <main>
-  <div class="top"><span class="pill" id="pill"></span><button id="accountBtn" aria-haspopup="dialog">Sign in</button><button id="viewBtn" class="vb" aria-label="Switch between week and month view">Month</button>
+  <div class="top"><button id="accountBtn" aria-haspopup="dialog" aria-label="Sign in"><span class="avatar" id="accountAvatar" aria-hidden="true"><img id="accountImage" alt="" hidden><span id="accountInitial">?</span></span><span class="account-label" id="accountLabel">Sign in</span></button><button id="viewBtn" class="vb" aria-label="Switch between week and month view">Month</button>
     <button id="themeBtn" aria-label="Switch light or dark mode"></button>
     <button id="gear" aria-label="Settings"><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6h7M14.5 6H17M3 14h3M10.5 14H17"/><circle cx="12.2" cy="6" r="1.9"/><circle cx="8.2" cy="14" r="1.9"/></svg></button>
   </div>
@@ -190,13 +205,14 @@ form.auth{display:grid;gap:12px;margin-top:18px}
 </main>
 <dialog id="accountSheet"><div class="in">
 <h2>Your account</h2>
-<p class="auth-user" id="authUser" hidden></p>
+<div class="profile-card" id="profileCard" hidden><span class="avatar" aria-hidden="true"><img id="profileImage" alt="" hidden><span id="profileInitial">?</span></span><span class="profile-details"><strong id="profileEmail"></strong><small>Supabase account</small></span></div>
 <form class="auth" id="authForm">
   <label>Email<input id="authEmail" type="email" autocomplete="email" required></label>
   <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="8" required></label>
   <div class="auth-actions"><button type="submit" class="prim" id="signInBtn">Sign in</button><button type="button" class="prim" id="signUpBtn">Create account</button></div>
 </form>
 <p class="auth-msg" id="authMsg" role="status"></p>
+<p class="profile-status" id="accountStatus" role="status" hidden></p>
 <div class="bar"><button class="auth-logout" id="signOutBtn" hidden>Sign out</button><button id="closeAccount" class="prim">Done</button></div>
 </div></dialog>
 <dialog id="sheet"><div class="in">
@@ -438,8 +454,44 @@ $('edit').addEventListener('click',e=>{
   else if(b.id==='eDel'&&ed){tasks=tasks.filter(x=>x!==ed);save();$('edit').close();render()}
 });
 function setSync(label,message){
-  $('pill').textContent=label;
   $('syncNote').textContent=message;
+  $('accountStatus').textContent=message;
+  $('accountStatus').hidden=!message||!label.includes('unavailable')&&!label.includes('paused');
+}
+function setAvatar(imageId,initialId,user){
+  const image=$(imageId),initial=$(initialId);
+  const name=user?.user_metadata?.full_name||user?.user_metadata?.name||user?.email||'?';
+  initial.textContent=name.trim().charAt(0).toUpperCase()||'?';
+  const avatarUrl=user?.user_metadata?.avatar_url||user?.user_metadata?.picture;
+  if(avatarUrl){
+    try{
+      const url=new URL(avatarUrl);
+      if(url.protocol==='https:'){
+        image.src=url.href;image.hidden=false;initial.hidden=true;
+        image.onerror=()=>{image.hidden=true;initial.hidden=false};
+        return;
+      }
+    }catch(error){console.warn('Ignoring an invalid profile image URL:',error)}
+  }
+  image.removeAttribute('src');image.hidden=true;initial.hidden=false;
+}
+function renderAccount(user){
+  const signedIn=!!user;
+  $('accountLabel').textContent=signedIn?(user.email||'Account'):'Sign in';
+  $('accountBtn').setAttribute('aria-label',signedIn?'Account for '+(user.email||'signed-in user'):'Sign in');
+  $('accountBtn').classList.toggle('signed-in',signedIn);
+  setAvatar('accountImage','accountInitial',user);
+  $('profileCard').hidden=!signedIn;
+  $('authForm').hidden=signedIn;
+  $('signOutBtn').hidden=!signedIn;
+  $('accountStatus').hidden=true;
+  if(signedIn){
+    $('profileEmail').textContent=user.email||'Signed in';
+    setAvatar('profileImage','profileInitial',user);
+  }else{
+    $('profileImage').removeAttribute('src');
+    $('accountImage').removeAttribute('src');
+  }
 }
 function storageKeys(userId){
   return userId
@@ -499,14 +551,11 @@ async function applyAccount(user,guestSnapshot){
     clearTimeout(cloudTimer);activeUser=null;
     loadLocal(null);
     $('main').inert=false;$('main').removeAttribute('aria-busy');
-    $('accountBtn').textContent='Sign in';$('accountBtn').classList.remove('signed-in');
-    $('authForm').hidden=false;$('authUser').hidden=true;$('signOutBtn').hidden=true;
+    renderAccount(null);
     setSync('This device only','Sign in to sync your tasks across devices.');
     return;
   }
-  $('accountBtn').textContent='Account';$('accountBtn').classList.add('signed-in');
-  $('authUser').textContent='Signed in as '+user.email;$('authUser').hidden=false;
-  $('authForm').hidden=true;$('signOutBtn').hidden=false;
+  renderAccount(user);
   $('main').inert=true;$('main').setAttribute('aria-busy','true');
   setSync('Syncing…','Loading your saved tasks.');
   const local=loadLocal(user.id);

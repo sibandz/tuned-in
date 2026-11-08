@@ -1,9 +1,9 @@
-const CACHE_NAME = 'tuned-in-app-v3';
+const CACHE_NAME = 'tuned-in-app-v4';
 const APP_SHELL = [
   '/',
   '/Today.html',
   '/manifest.webmanifest',
-  '/icons/icon.svg',
+  '/icons/icon-180.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png'
 ];
