@@ -5,7 +5,30 @@ create table if not exists public.planner_data (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.push_subscriptions (
+  endpoint text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  keys jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists push_subscriptions_user_id_idx
+  on public.push_subscriptions (user_id);
+
+create table if not exists public.planner_push_deliveries (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  event_key text not null,
+  endpoint text not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, event_key, endpoint)
+);
+
 alter table public.planner_data enable row level security;
+alter table public.push_subscriptions enable row level security;
+alter table public.planner_push_deliveries enable row level security;
+
+revoke all on public.push_subscriptions, public.planner_push_deliveries from anon, authenticated;
+grant all on public.push_subscriptions, public.planner_push_deliveries to service_role;
 
 grant select, insert, update on public.planner_data to authenticated;
 

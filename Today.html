@@ -232,8 +232,9 @@ form.auth{display:grid;gap:12px;margin-top:18px}
 <div class="row"><span>Browser notification</span><button class="sw" data-key="browser" role="switch" aria-label="Browser notification"></button></div>
 <div class="row"><span>Sound</span><button class="sw" data-key="sound" role="switch" aria-label="Sound"></button></div>
 <p class="note" id="permNote"></p>
+<p class="note" id="pushNote"></p>
 <p class="note" id="syncNote"></p>
-<p class="note">Reminders fire while this page is open in a tab. They can’t wake a closed browser.</p>
+<p class="note">Device notifications need permission. Closed-app reminders also need you to be signed in and have this device subscribed.</p>
 <div class="row"><button id="testBtn">Send a test</button><button id="closeSheet">Done</button></div>
 </div></dialog>
 <dialog id="edit"><div class="in">
@@ -261,7 +262,7 @@ const todayK=()=>key(new Date());
 const nowT=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())};
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let sel=todayK();
-const defaultSettings=()=>({theme:'auto',fmt:'24',week:'mon',vm:matchMedia('(min-width: 760px)').matches?'month':'week',remind:true,lead:'10',browser:false,banner:true,sound:false,morning:false,morningT:'08:00',evening:false,eveningT:'18:00'});
+const defaultSettings=()=>({theme:'auto',fmt:'24',week:'mon',vm:matchMedia('(min-width: 760px)').matches?'month':'week',remind:true,lead:'10',browser:false,banner:true,sound:false,morning:false,morningT:'08:00',evening:false,eveningT:'18:00',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'});
 let S=defaultSettings();
 let fired={};
 try{const r=JSON.parse(localStorage.getItem(SK)||'{}');Object.assign(S,r.S||{});fired=r.fired||{}}catch(e){}
@@ -278,20 +279,64 @@ function syncUI(){
     else if(el.classList.contains('sw')){el.classList.toggle('on',!!v);el.setAttribute('aria-checked',!!v)}
     else el.value=v});
   document.getElementById('permNote').textContent=!window.Notification?'Browser notifications aren’t available here, so reminders show inside the app.':(Notification.permission==='denied'?'Your browser has blocked notifications for this site. Reminders show inside the app instead.':'');
+  document.getElementById('pushNote').textContent=!activeUser
+    ?'Sign in to receive reminders while the app is closed.'
+    :(!('serviceWorker' in navigator)||!('PushManager' in window)
+      ?'This browser does not support push notifications.'
+      :(S.browser
+        ?(window.Notification&&Notification.permission==='granted'
+          ?'Notifications are enabled. Each device must be subscribed separately.'
+          :'Allow notifications on this device, then turn Browser notification off and on to subscribe it.')
+        :'Turn on Browser notification to enable notifications on this device.'));
 }
 function hideToast(){const el=document.getElementById('toast');try{el.hidePopover()}catch(e){}el.hidden=true}
 function toast(msg){const el=document.getElementById('toast');el.querySelector('span').textContent=msg;el.hidden=false;
   try{if(!el.matches(':popover-open'))el.showPopover()}catch(e){}
   clearTimeout(toast.t);toast.t=setTimeout(hideToast,9000)}
 function beep(){try{const c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.frequency.value=660;g.gain.value=.08;o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+.25)}catch(e){}}
-function notify(title,body){
+async function notify(title,body,tag=title){
   let shown=false;
-  if(S.browser){try{if(window.Notification&&Notification.permission==='granted'){new Notification(title,{body});shown=true}}catch(e){}}
+  if(S.browser){try{if(window.Notification&&Notification.permission==='granted'&&'serviceWorker'in navigator){const registration=await navigator.serviceWorker.ready;await registration.showNotification(title,{body,icon:'/icons/icon-192.png',badge:'/icons/icon-180.png',tag:'tuned-in-'+tag,renotify:false,data:{url:'/Today.html'}});shown=true}}catch(error){console.error('Could not show a device notification:',error)}}
   if(S.banner||!shown)toast(title+(body?' — '+body:''));
   if(S.sound)beep();
 }
-async function askPerm(){let ok=false;try{ok=window.Notification&&(Notification.permission==='granted'||await Notification.requestPermission()==='granted')}catch(e){}
-  if(!ok)S.browser=false}
+function base64ToBytes(value){
+  const padding='='.repeat((4-value.length%4)%4);
+  return Uint8Array.from(atob((value+padding).replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+}
+async function savePushSubscription(subscription,method='POST'){
+  const {data:{session},error}=await cloudClient.auth.getSession();
+  if(error)throw error;
+  if(!session)throw new Error('Sign in before enabling device notifications.');
+  const response=await fetch('/api/push-subscriptions',{
+    method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},
+    body:JSON.stringify({subscription:subscription.toJSON()})
+  });
+  const result=await response.json();
+  if(!response.ok)throw new Error(result.error||'Could not save this device notification subscription.');
+}
+async function askPerm(){
+  if(!window.Notification||!('serviceWorker'in navigator)||!('PushManager'in window))throw new Error('This browser does not support device notifications.');
+  const permission=Notification.permission==='granted'? 'granted':await Notification.requestPermission();
+  if(permission!=='granted')throw new Error('Allow notifications in your browser or device settings, then try again.');
+  if(!activeUser)throw new Error('Sign in before enabling device notifications.');
+  const response=await fetch('/api/push-config',{cache:'no-store'});
+  const config=await response.json();
+  if(!response.ok)throw new Error(config.error||'Push notifications are not configured on the server yet.');
+  const registration=await navigator.serviceWorker.ready;
+  let subscription=await registration.pushManager.getSubscription();
+  if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64ToBytes(config.publicKey)});
+  await savePushSubscription(subscription);
+  return subscription;
+}
+async function removePushSubscription(){
+  if(!cloudClient||!('serviceWorker'in navigator))return;
+  const registration=await navigator.serviceWorker.getRegistration();
+  const subscription=await registration?.pushManager.getSubscription();
+  if(!subscription)return;
+  await savePushSubscription(subscription,'DELETE');
+  await subscription.unsubscribe();
+}
 function check(){
   if(!S.remind&&!S.morning&&!S.evening)return;
   const now=new Date(),t0=todayK(),H=36e5;let changed=false;
@@ -300,13 +345,13 @@ function check(){
   if(S.remind)for(const t of open){
     if(!t.time)continue;
     const due=at(t.date,t.time),fire=new Date(+due-(+S.lead)*6e4),k='t|'+t.id+'|'+t.date+'|'+t.time+'|'+S.lead;
-    if(now>=fire&&now<=new Date(+due+H/2)&&!fired[k]){fired[k]=1;changed=true;notify(t.title,+S.lead?'in '+S.lead+' min ('+fmtT(t.time)+')':'now')}
+    if(now>=fire&&now<=new Date(+due+H/2)&&!fired[k]){fired[k]=1;changed=true;notify(t.title,+S.lead?'in '+S.lead+' min ('+fmtT(t.time)+')':'now','task|'+t.id+'|'+t.date+'|'+t.time+'|'+S.lead)}
   }
   const m=at(t0,S.morningT||'08:00'),e=at(t0,S.eveningT||'18:00');
   if(S.morning&&now>=m&&now<=new Date(+m+3*H)&&!fired['m|'+t0]){fired['m|'+t0]=1;changed=true;
-    notify('Good morning',open.length?open.length+' on today’s list. Start with “'+sorted(open)[0].title+'”.':'Nothing planned yet. Add the first thing.')}
+    notify('Good morning',open.length?open.length+' on today’s list. Start with “'+sorted(open)[0].title+'”.':'Nothing planned yet. Add the first thing.','morning|'+t0)}
   if(S.evening&&now>=e&&now<=new Date(+e+3*H)&&!fired['e|'+t0]){fired['e|'+t0]=1;changed=true;
-    if(open.length)notify('Evening check-in',open.length+' still open. Tick them off or move them to tomorrow.')}
+    if(open.length)notify('Evening check-in',open.length+' still open. Tick them off or move them to tomorrow.','evening|'+t0)}
   if(Object.keys(fired).length>300){fired={};changed=true}
   if(changed)saveS();
 }
@@ -317,7 +362,19 @@ sheet.addEventListener('click',async e=>{
   if(b.id==='closeSheet'){sheet.close();return}
   if(b.id==='testBtn'){notify('Test reminder','This is how your reminders will look.');return}
   const host=b.closest('[data-key]');if(!host)return;const key=host.dataset.key;
-  if(b.classList.contains('sw')){S[key]=!S[key];if(key==='browser'&&S.browser)await askPerm()}
+  if(b.classList.contains('sw')){
+    const enabled=!S[key];
+    if(key==='browser'&&enabled){
+      try{await askPerm();S.browser=true}
+      catch(error){S.browser=false;$('permNote').textContent=error.message}
+    }else{
+      S[key]=enabled;
+      if(key==='browser'&&!enabled)try{await removePushSubscription()}catch(error){
+        console.error('Could not remove this device notification subscription:',error);
+        $('permNote').textContent='Could not remove this device subscription: '+error.message;
+      }
+    }
+  }
   else if(b.dataset.v!==undefined)S[key]=b.dataset.v;
   else return;
   saveS();applyTheme();syncUI();render();
@@ -614,7 +671,15 @@ async function applyAccount(user,guestSnapshot){
     console.error('Could not load planner data from Supabase:',error);
     setSync('Sync paused','Could not load cloud tasks: '+error.message);
   }finally{
-    if(loadId===accountLoad){$('main').inert=false;$('main').removeAttribute('aria-busy')}
+    if(loadId===accountLoad){
+      $('main').inert=false;$('main').removeAttribute('aria-busy');
+      if(activeUser?.id===user.id&&S.browser&&window.Notification&&Notification.permission==='granted'){
+        askPerm().catch(error=>{
+          console.error('Could not restore this device notification subscription:',error);
+          $('pushNote').textContent='Could not subscribe this device: '+error.message;
+        });
+      }
+    }
   }
 }
 async function refreshCloud(){
@@ -688,6 +753,7 @@ $('authForm').addEventListener('submit',e=>{e.preventDefault();submitAuth('signi
 $('signUpBtn').onclick=()=>submitAuth('signup');
 $('signOutBtn').onclick=async()=>{
   if(!cloudClient)return;
+  try{await removePushSubscription()}catch(error){console.error('Could not remove this device notification subscription:',error)}
   const {error}=await cloudClient.auth.signOut();
   if(error){console.error('Could not sign out:',error);setAuthMessage('Could not sign out. Please try again.')}
 };

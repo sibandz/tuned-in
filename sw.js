@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tuned-in-app-v4';
+const CACHE_NAME = 'tuned-in-app-v5';
 const APP_SHELL = [
   '/',
   '/Today.html',
@@ -26,9 +26,48 @@ self.addEventListener('activate', event => {
   );
 });
 
+self.addEventListener('push', event => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (error) {
+    console.error('Could not parse a push notification payload:', error);
+  }
+
+  const title = typeof payload.title === 'string' ? payload.title : 'Today';
+  const options = {
+    body: typeof payload.body === 'string' ? payload.body : '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-180.png',
+    tag: typeof payload.tag === 'string' ? payload.tag : 'tuned-in-reminder',
+    renotify: false,
+    data: { url: typeof payload.url === 'string' ? payload.url : '/Today.html' }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL(
+    typeof event.notification.data?.url === 'string' ? event.notification.data.url : '/Today.html',
+    self.location.origin
+  );
+  if (target.origin !== self.location.origin) return;
+
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async clients => {
+    const existing = clients.find(client => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      if (new URL(existing.url).pathname !== target.pathname) await existing.navigate(target.href);
+      return existing.focus();
+    }
+    return self.clients.openWindow(target.href);
+  }));
+});
+
 self.addEventListener('fetch', event => {
   const request = event.request;
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
