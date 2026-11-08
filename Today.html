@@ -114,6 +114,7 @@ select,input[type=time]{font:inherit;font-size:14px;color:var(--ink);background:
 .profile-details strong{overflow-wrap:anywhere}
 .profile-details small{color:var(--mute)}
 .profile-status{color:var(--mute);font-size:14px;margin:10px 0}
+.sync-now{color:var(--forest);font-size:14px;font-weight:600;text-decoration:underline}
 .t{display:flex;align-items:center;gap:10px;text-align:left;color:inherit}
 .dot{flex:none;width:10px;height:10px;border-radius:50%}
 .tt{display:flex;flex-direction:column;min-width:0}
@@ -212,7 +213,7 @@ form.auth{display:grid;gap:12px;margin-top:18px}
   <div class="auth-actions"><button type="submit" class="prim" id="signInBtn">Sign in</button><button type="button" class="prim" id="signUpBtn">Create account</button></div>
 </form>
 <p class="auth-msg" id="authMsg" role="status"></p>
-<p class="profile-status" id="accountStatus" role="status" hidden></p>
+<div class="profile-status"><p id="accountStatus" role="status" hidden></p><button class="sync-now" id="syncNow" hidden>Sync now</button></div>
 <div class="bar"><button class="auth-logout" id="signOutBtn" hidden>Sign out</button><button id="closeAccount" class="prim">Done</button></div>
 </div></dialog>
 <dialog id="sheet"><div class="in">
@@ -264,7 +265,7 @@ const defaultSettings=()=>({theme:'auto',fmt:'24',week:'mon',vm:matchMedia('(min
 let S=defaultSettings();
 let fired={};
 try{const r=JSON.parse(localStorage.getItem(SK)||'{}');Object.assign(S,r.S||{});fired=r.fired||{}}catch(e){}
-let cloudClient=null,activeUser=null,cloudTimer=null,localChangedAt=0,accountLoad=0,accountUserId,realtimeChannel=null;
+let cloudClient=null,activeUser=null,cloudTimer=null,localChangedAt=0,accountLoad=0,accountUserId,realtimeChannel=null,syncRequest=0;
 const saveS=()=>{storeLocal();push()};
 const fmtT=t=>{if(S.fmt!=='12'||!t)return t;const h=+t.slice(0,2);return (h%12||12)+':'+t.slice(3)+(h<12?' am':' pm')};
 const MOON='<svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M16 12.2A6.5 6.5 0 0 1 7.8 4 6.5 6.5 0 1 0 16 12.2z"/></svg>';
@@ -484,6 +485,7 @@ function renderAccount(user){
   $('profileCard').hidden=!signedIn;
   $('authForm').hidden=signedIn;
   $('signOutBtn').hidden=!signedIn;
+  $('syncNow').hidden=!signedIn;
   $('accountStatus').hidden=true;
   if(signedIn){
     $('profileEmail').textContent=user.email||'Signed in';
@@ -618,12 +620,16 @@ async function applyAccount(user,guestSnapshot){
 async function refreshCloud(){
   if(!cloudClient||!activeUser)return;
   const user=activeUser;
+  const requestId=++syncRequest;
   try{
     const {data:remote,error}=await cloudClient.from('planner_data')
       .select('tasks,settings,updated_at').eq('user_id',user.id).maybeSingle();
     if(error)throw error;
-    if(activeUser?.id!==user.id)return;
-    if(!remote)return;
+    if(activeUser?.id!==user.id||requestId!==syncRequest)return;
+    if(!remote){
+      await writeCloud();
+      return;
+    }
     const remoteTime=Date.parse(remote.updated_at)||0;
     if(remoteTime>localChangedAt){
       tasks=Array.isArray(remote.tasks)?remote.tasks:[];
@@ -633,8 +639,11 @@ async function refreshCloud(){
       setSync('Synced','Your tasks are saved to your Supabase account.');
     }else if(localChangedAt>remoteTime){
       await writeCloud();
+    }else{
+      setSync('Synced','Your tasks are saved to your Supabase account.');
     }
   }catch(error){
+    if(activeUser?.id!==user.id||requestId!==syncRequest)return;
     console.error('Could not refresh planner data:',error);
     setSync('Sync paused','Could not refresh cloud tasks: '+error.message);
   }
@@ -666,6 +675,13 @@ async function submitAuth(mode){
   }
 }
 $('accountBtn').onclick=()=>{$('authMsg').textContent='';$('accountSheet').showModal()};
+$('syncNow').onclick=async()=>{
+  if(!activeUser)return;
+  $('syncNow').disabled=true;
+  setSync('Syncing…','Checking your Supabase account for the latest tasks.');
+  try{await refreshCloud()}
+  finally{$('syncNow').disabled=false}
+};
 $('closeAccount').onclick=()=>$('accountSheet').close();
 $('accountSheet').addEventListener('click',e=>{if(e.target===$('accountSheet'))$('accountSheet').close()});
 $('authForm').addEventListener('submit',e=>{e.preventDefault();submitAuth('signin')});
