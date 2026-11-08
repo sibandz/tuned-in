@@ -264,7 +264,7 @@ const defaultSettings=()=>({theme:'auto',fmt:'24',week:'mon',vm:matchMedia('(min
 let S=defaultSettings();
 let fired={};
 try{const r=JSON.parse(localStorage.getItem(SK)||'{}');Object.assign(S,r.S||{});fired=r.fired||{}}catch(e){}
-let cloudClient=null,activeUser=null,cloudTimer=null,localChangedAt=0,accountLoad=0,accountUserId;
+let cloudClient=null,activeUser=null,cloudTimer=null,localChangedAt=0,accountLoad=0,accountUserId,realtimeChannel=null;
 const saveS=()=>{storeLocal();push()};
 const fmtT=t=>{if(S.fmt!=='12'||!t)return t;const h=+t.slice(0,2);return (h%12||12)+':'+t.slice(3)+(h<12?' am':' pm')};
 const MOON='<svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M16 12.2A6.5 6.5 0 0 1 7.8 4 6.5 6.5 0 1 0 16 12.2z"/></svg>';
@@ -455,8 +455,8 @@ $('edit').addEventListener('click',e=>{
 });
 function setSync(label,message){
   $('syncNote').textContent=message;
-  $('accountStatus').textContent=message;
-  $('accountStatus').hidden=!message||!label.includes('unavailable')&&!label.includes('paused');
+  $('accountStatus').textContent=message?label+': '+message:label;
+  $('accountStatus').hidden=!message||(!activeUser&&!label.includes('unavailable'));
 }
 function setAvatar(imageId,initialId,user){
   const image=$(imageId),initial=$(initialId);
@@ -541,14 +541,28 @@ function push(){
   clearTimeout(cloudTimer);
   cloudTimer=setTimeout(()=>writeCloud().catch(error=>{
     console.error('Could not sync planner data:',error);
-    setSync('Sync paused','Changes are saved on this device. Cloud sync failed; check your connection and Supabase setup.');
+    setSync('Sync paused','Cloud sync failed: '+error.message);
   }),600);
+}
+function watchCloud(user){
+  if(realtimeChannel)cloudClient.removeChannel(realtimeChannel);
+  realtimeChannel=cloudClient.channel('planner-data-'+user.id)
+    .on('postgres_changes',{
+      event:'*',schema:'public',table:'planner_data',filter:'user_id=eq.'+user.id
+    },()=>refreshCloud())
+    .subscribe(status=>{
+      if(activeUser?.id!==user.id)return;
+      if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
+        console.warn('Live task updates are unavailable; periodic sync will continue.');
+      }
+    });
 }
 async function applyAccount(user,guestSnapshot){
   const userId=user?.id||null;
   if(userId===accountUserId)return;
   accountUserId=userId;
   const loadId=++accountLoad;
+  if(realtimeChannel){cloudClient.removeChannel(realtimeChannel);realtimeChannel=null}
   activeUser=user;
   if(!user){
     clearTimeout(cloudTimer);activeUser=null;
@@ -559,6 +573,7 @@ async function applyAccount(user,guestSnapshot){
     return;
   }
   renderAccount(user);
+  watchCloud(user);
   $('main').inert=true;$('main').setAttribute('aria-busy','true');
   setSync('Syncing…','Loading your saved tasks.');
   const local=loadLocal(user.id);
@@ -595,7 +610,7 @@ async function applyAccount(user,guestSnapshot){
   }catch(error){
     if(loadId!==accountLoad)return;
     console.error('Could not load planner data from Supabase:',error);
-    setSync('Sync paused','Could not load your cloud tasks. Your saved tasks on this device are unchanged.');
+    setSync('Sync paused','Could not load cloud tasks: '+error.message);
   }finally{
     if(loadId===accountLoad){$('main').inert=false;$('main').removeAttribute('aria-busy')}
   }
@@ -621,7 +636,7 @@ async function refreshCloud(){
     }
   }catch(error){
     console.error('Could not refresh planner data:',error);
-    setSync('Sync paused','Could not refresh your cloud tasks. Your saved tasks on this device are unchanged.');
+    setSync('Sync paused','Could not refresh cloud tasks: '+error.message);
   }
 }
 function setAuthMessage(message){$('authMsg').textContent=message}
@@ -686,7 +701,7 @@ async function initCloud(){
 }
 window.addEventListener('online',()=>{if(activeUser)push()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&activeUser)refreshCloud()});
-setInterval(()=>{if(activeUser)refreshCloud()},30000);
+setInterval(()=>{if(activeUser)refreshCloud()},10000);
 initCloud();
 setInterval(()=>{render();check()},20000);
 applyTheme();syncUI();render();check();

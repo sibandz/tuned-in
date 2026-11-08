@@ -27,3 +27,18 @@ create policy "Users can update their own planner data"
   to authenticated
   using ((select auth.uid()) = user_id)
   with check ((select auth.uid()) = user_id);
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+    and not exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'planner_data'
+    ) then
+    alter publication supabase_realtime add table public.planner_data;
+  end if;
+end
+$$;
