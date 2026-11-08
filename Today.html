@@ -102,6 +102,8 @@ select,input[type=time]{font:inherit;font-size:14px;color:var(--ink);background:
 #toast button{flex:none;opacity:.8}
 .pill{margin-right:auto;align-self:center;font-size:13px;color:var(--mute)}
 .top .vb{width:auto;padding:0 14px;border-radius:18px;font-size:14px}
+.top #accountBtn{width:auto;padding:0 14px;border-radius:18px;font-size:14px;background:var(--surface);color:var(--ink)}
+.top #accountBtn.signed-in{background:var(--forest-soft);color:var(--forest)}
 .t{display:flex;align-items:center;gap:10px;text-align:left;color:inherit}
 .dot{flex:none;width:10px;height:10px;border-radius:50%}
 .tt{display:flex;flex-direction:column;min-width:0}
@@ -136,12 +138,37 @@ textarea.fld{resize:vertical;min-height:92px}
 .ev.hi{font-weight:600}
 .ev.dn{opacity:.45;text-decoration:line-through}
 .mc small,.mc.sel small{align-self:flex-start;padding-left:3px;color:var(--mute)}
+form.auth{display:grid;gap:12px;margin-top:18px}
+.auth input{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+.auth-actions{display:flex;gap:10px}
+.auth-actions button{flex:1}
+.auth-msg{min-height:1.5em;color:var(--mute);font-size:14px;margin:10px 0 0}
+.auth-user{overflow-wrap:anywhere;color:var(--mute);font-size:14px;margin:10px 0}
+.auth-logout{color:var(--mute);text-decoration:underline}
+@media(min-width:760px){
+  main{max-width:1120px;padding:42px 44px 72px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);column-gap:clamp(36px,6vw,84px);align-content:start}
+  .top,header,.hint{grid-column:1/-1}
+  .week{grid-column:1;grid-row:3;align-self:start;row-gap:8px}
+  .add{grid-column:2;grid-row:3;align-self:start}
+  #view{grid-column:2;grid-row:4}
+  .hint{grid-row:5}
+  .top{margin-bottom:14px}
+  header{margin-bottom:28px}
+  .week{margin-bottom:0}
+  .day{padding:12px 0 10px}
+  .day b{font-size:19px}
+  .mc{min-height:92px}
+  .empty{padding:56px 0}
+}
+@media(max-width:759px){
+  .top #accountBtn{padding:0 10px;font-size:13px}
+}
 @media (prefers-reduced-motion:no-preference){.chk,.day,.next{transition:background .2s,color .2s}}
 </style>
 </head>
 <body>
 <main>
-  <div class="top"><span class="pill" id="pill"></span><button id="viewBtn" class="vb" aria-label="Switch between week and month view">Month</button>
+  <div class="top"><span class="pill" id="pill"></span><button id="accountBtn" aria-haspopup="dialog">Sign in</button><button id="viewBtn" class="vb" aria-label="Switch between week and month view">Month</button>
     <button id="themeBtn" aria-label="Switch light or dark mode"></button>
     <button id="gear" aria-label="Settings"><svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 6h7M14.5 6H17M3 14h3M10.5 14H17"/><circle cx="12.2" cy="6" r="1.9"/><circle cx="8.2" cy="14" r="1.9"/></svg></button>
   </div>
@@ -161,6 +188,17 @@ textarea.fld{resize:vertical;min-height:92px}
   <div id="view"></div>
   <p class="hint">Type a time (3pm, 15:30) or a day (tomorrow, fri) and it sorts itself out. Add ! or !! to mark it important.</p>
 </main>
+<dialog id="accountSheet"><div class="in">
+<h2>Your account</h2>
+<p class="auth-user" id="authUser" hidden></p>
+<form class="auth" id="authForm">
+  <label>Email<input id="authEmail" type="email" autocomplete="email" required></label>
+  <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="8" required></label>
+  <div class="auth-actions"><button type="submit" class="prim" id="signInBtn">Sign in</button><button type="button" class="prim" id="signUpBtn">Create account</button></div>
+</form>
+<p class="auth-msg" id="authMsg" role="status"></p>
+<div class="bar"><button class="auth-logout" id="signOutBtn" hidden>Sign out</button><button id="closeAccount" class="prim">Done</button></div>
+</div></dialog>
 <dialog id="sheet"><div class="in">
 <h2>Settings</h2>
 <div class="grp">Look</div>
@@ -191,11 +229,13 @@ textarea.fld{resize:vertical;min-height:92px}
 <div class="bar"><button id="eDel">Delete</button><button id="eSave" class="prim">Save</button></div>
 </div></dialog>
 <div id="toast" popover="manual" role="status" hidden><span></span><button onclick="hideToast()" aria-label="Dismiss">✕</button></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
-const K='dayplan.v1';
+const GUEST_K='dayplan.v1',GUEST_SK='dayplan.settings.v1';
+let K=GUEST_K,SK=GUEST_SK;
 let tasks=[];
 try{tasks=JSON.parse(localStorage.getItem(K)||'[]')}catch(e){tasks=[]}
-const save=()=>{try{localStorage.setItem(K,JSON.stringify(tasks))}catch(e){}push()};
+const save=()=>{storeLocal();push()};
 const pad=n=>String(n).padStart(2,'0');
 const key=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 const fromKey=k=>{const a=k.split('-').map(Number);return new Date(a[0],a[1]-1,a[2])};
@@ -204,11 +244,12 @@ const todayK=()=>key(new Date());
 const nowT=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())};
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let sel=todayK();
-const SK='dayplan.settings.v1';
-let S={theme:'auto',fmt:'24',week:'mon',remind:true,lead:'10',browser:false,banner:true,sound:false,morning:false,morningT:'08:00',evening:false,eveningT:'18:00'};
+const defaultSettings=()=>({theme:'auto',fmt:'24',week:'mon',vm:matchMedia('(min-width: 760px)').matches?'month':'week',remind:true,lead:'10',browser:false,banner:true,sound:false,morning:false,morningT:'08:00',evening:false,eveningT:'18:00'});
+let S=defaultSettings();
 let fired={};
 try{const r=JSON.parse(localStorage.getItem(SK)||'{}');Object.assign(S,r.S||{});fired=r.fired||{}}catch(e){}
-const saveS=()=>{try{localStorage.setItem(SK,JSON.stringify({S,fired}))}catch(e){}push()};
+let cloudClient=null,activeUser=null,cloudTimer=null,localChangedAt=0,accountLoad=0;
+const saveS=()=>{storeLocal();push()};
 const fmtT=t=>{if(S.fmt!=='12'||!t)return t;const h=+t.slice(0,2);return (h%12||12)+':'+t.slice(3)+(h<12?' am':' pm')};
 const MOON='<svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M16 12.2A6.5 6.5 0 0 1 7.8 4 6.5 6.5 0 1 0 16 12.2z"/></svg>';
 const SUN='<svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="3.2"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></svg>';
@@ -236,21 +277,21 @@ async function askPerm(){let ok=false;try{ok=window.Notification&&(Notification.
   if(!ok)S.browser=false}
 function check(){
   if(!S.remind&&!S.morning&&!S.evening)return;
-  const now=new Date(),t0=todayK(),H=36e5;
+  const now=new Date(),t0=todayK(),H=36e5;let changed=false;
   const at=(d,t)=>{const a=d.split('-').map(Number);return new Date(a[0],a[1]-1,a[2],+t.slice(0,2),+t.slice(3))};
   const open=tasks.filter(t=>!t.done&&t.date===t0);
   if(S.remind)for(const t of open){
     if(!t.time)continue;
     const due=at(t.date,t.time),fire=new Date(+due-(+S.lead)*6e4),k='t|'+t.id+'|'+t.date+'|'+t.time+'|'+S.lead;
-    if(now>=fire&&now<=new Date(+due+H/2)&&!fired[k]){fired[k]=1;notify(t.title,+S.lead?'in '+S.lead+' min ('+fmtT(t.time)+')':'now')}
+    if(now>=fire&&now<=new Date(+due+H/2)&&!fired[k]){fired[k]=1;changed=true;notify(t.title,+S.lead?'in '+S.lead+' min ('+fmtT(t.time)+')':'now')}
   }
   const m=at(t0,S.morningT||'08:00'),e=at(t0,S.eveningT||'18:00');
-  if(S.morning&&now>=m&&now<=new Date(+m+3*H)&&!fired['m|'+t0]){fired['m|'+t0]=1;
+  if(S.morning&&now>=m&&now<=new Date(+m+3*H)&&!fired['m|'+t0]){fired['m|'+t0]=1;changed=true;
     notify('Good morning',open.length?open.length+' on today’s list. Start with “'+sorted(open)[0].title+'”.':'Nothing planned yet. Add the first thing.')}
-  if(S.evening&&now>=e&&now<=new Date(+e+3*H)&&!fired['e|'+t0]){fired['e|'+t0]=1;
+  if(S.evening&&now>=e&&now<=new Date(+e+3*H)&&!fired['e|'+t0]){fired['e|'+t0]=1;changed=true;
     if(open.length)notify('Evening check-in',open.length+' still open. Tick them off or move them to tomorrow.')}
-  if(Object.keys(fired).length>300)fired={};
-  saveS();
+  if(Object.keys(fired).length>300){fired={};changed=true}
+  if(changed)saveS();
 }
 const sheet=document.getElementById('sheet');
 sheet.addEventListener('click',async e=>{
@@ -396,51 +437,199 @@ $('edit').addEventListener('click',e=>{
   else if(b.id==='eSave'&&ed){ed.title=$('eT').value.trim()||ed.title;ed.date=$('eD').value||ed.date;ed.time=$('eH').value;ed.c=ec;ed.p=ep;ed.note=$('eN').value.trim();sel=ed.date;save();$('edit').close();render()}
   else if(b.id==='eDel'&&ed){tasks=tasks.filter(x=>x!==ed);save();$('edit').close();render()}
 });
-/* sync across devices (Claude account) */
-let localU=0;try{localU=+localStorage.getItem('dayplan.u')||0}catch(e){}
-let lastLocal=JSON.stringify({tasks,S}),lastSent='',sendT=null,ref=null,tmo=null;
-function setSync(s){
-  const m={on:['Synced','Synced across your devices through your Claude account.'],off:['This device only','Not signed in to Claude here, so tasks stay on this device. Open this page while signed in to sync them.'],err:['Sync paused','Couldn’t reach sync. Changes are saved on this device and will go up on the next edit.'],wait:['Syncing…','']}[s];
-  $('pill').textContent=m[0];$('syncNote').textContent=m[1];
+function setSync(label,message){
+  $('pill').textContent=label;
+  $('syncNote').textContent=message;
 }
-async function send(){
-  if(!ref)return;
-  const p=JSON.stringify({tasks,S});
-  try{await ref.set({tasks,S,u:localU});lastSent=p;setSync('on')}catch(e){setSync('err')}
+function storageKeys(userId){
+  return userId
+    ?{tasks:'dayplan.v1.user.'+userId,settings:'dayplan.settings.v1.user.'+userId,updated:'dayplan.updated.user.'+userId}
+    :{tasks:GUEST_K,settings:GUEST_SK,updated:null};
+}
+function loadLocal(userId){
+  const keys=storageKeys(userId);
+  K=keys.tasks;SK=keys.settings;
+  try{tasks=JSON.parse(localStorage.getItem(K)||'[]')}catch(error){console.error('Could not read saved tasks:',error);tasks=[]}
+  try{
+    const saved=JSON.parse(localStorage.getItem(SK)||'{}');
+    S={...defaultSettings(),...(saved.S||{})};fired=saved.fired||{};
+  }catch(error){console.error('Could not read saved settings:',error);S=defaultSettings();fired={}}
+  try{localChangedAt=keys.updated?Number(localStorage.getItem(keys.updated))||0:0}
+  catch(error){console.error('Could not read the local sync timestamp:',error);localChangedAt=0}
+  applyTheme();syncUI();render();
+  let hasLocal=false;
+  try{hasLocal=localStorage.getItem(keys.tasks)!==null}catch(error){console.error('Could not inspect saved planner data:',error)}
+  return{keys,hasLocal};
+}
+function storeLocal(updatedAt=Date.now()){
+  try{
+    localStorage.setItem(K,JSON.stringify(tasks));
+    localStorage.setItem(SK,JSON.stringify({S,fired}));
+    if(activeUser){
+      localChangedAt=Math.max(localChangedAt,updatedAt);
+      localStorage.setItem(storageKeys(activeUser.id).updated,String(localChangedAt));
+    }
+  }catch(error){console.error('Could not save planner data on this device:',error)}
+}
+async function writeCloud(){
+  if(!cloudClient||!activeUser)throw new Error('You must be signed in to sync tasks.');
+  clearTimeout(cloudTimer);
+  const user=activeUser;
+  const updatedAt=Math.max(Date.now(),localChangedAt+1);
+  const {error}=await cloudClient.from('planner_data').upsert({
+    user_id:user.id,tasks,settings:S,updated_at:new Date(updatedAt).toISOString()
+  },{onConflict:'user_id'});
+  if(error)throw error;
+  if(activeUser?.id!==user.id)return;
+  localChangedAt=updatedAt;storeLocal(updatedAt);
+  setSync('Synced','Your tasks are saved to your Supabase account.');
 }
 function push(){
-  const p=JSON.stringify({tasks,S});
-  if(p!==lastLocal){lastLocal=p;localU=Date.now();try{localStorage.setItem('dayplan.u',String(localU))}catch(e){}}
-  if(!ref||p===lastSent)return;
-  clearTimeout(sendT);sendT=setTimeout(send,1200);
+  if(!cloudClient||!activeUser)return;
+  clearTimeout(cloudTimer);
+  cloudTimer=setTimeout(()=>writeCloud().catch(error=>{
+    console.error('Could not sync planner data:',error);
+    setSync('Sync paused','Changes are saved on this device. Cloud sync failed; check your connection and Supabase setup.');
+  }),600);
 }
-function applyRemote(r){
-  tasks=r.tasks;Object.assign(S,r.S||{});localU=r.u;
-  try{localStorage.setItem(K,JSON.stringify(tasks));localStorage.setItem(SK,JSON.stringify({S,fired}));localStorage.setItem('dayplan.u',String(localU))}catch(e){}
-  lastLocal=lastSent=JSON.stringify({tasks,S});
-  applyTheme();syncUI();render();
-}
-async function initSync(){
-  setSync('wait');
+async function applyAccount(user,guestSnapshot){
+  const loadId=++accountLoad;
+  activeUser=user;
+  if(!user){
+    clearTimeout(cloudTimer);activeUser=null;
+    loadLocal(null);
+    $('main').inert=false;$('main').removeAttribute('aria-busy');
+    $('accountBtn').textContent='Sign in';$('accountBtn').classList.remove('signed-in');
+    $('authForm').hidden=false;$('authUser').hidden=true;$('signOutBtn').hidden=true;
+    setSync('This device only','Sign in to sync your tasks across devices.');
+    return;
+  }
+  $('accountBtn').textContent='Account';$('accountBtn').classList.add('signed-in');
+  $('authUser').textContent='Signed in as '+user.email;$('authUser').hidden=false;
+  $('authForm').hidden=true;$('signOutBtn').hidden=false;
+  $('main').inert=true;$('main').setAttribute('aria-busy','true');
+  setSync('Syncing…','Loading your saved tasks.');
+  const local=loadLocal(user.id);
   try{
-    const d=await claude.use('db'),u=await claude.use('user');
-    if(!d||!u){setSync('off');return}
-    const id=await u.id();
-    if(!id){setSync('off');return}
-    ref=d.doc('data/users/'+id+'/planner');
-    tmo=setTimeout(()=>setSync('err'),10000);
-    ref.onSnapshot(snap=>{
-      clearTimeout(tmo);
-      if(snap.metadata&&snap.metadata.hasPendingWrites)return;
-      const r=snap.exists?snap.data():null;
-      if(r&&Array.isArray(r.tasks)&&(r.u||0)>localU)applyRemote(r);
-      else if(!r||(r.u||0)<localU){lastSent='';send()}
-      setSync('on');
-    },()=>setSync('err'));
-  }catch(e){setSync('off')}
+    const {data:remote,error}=await cloudClient.from('planner_data')
+      .select('tasks,settings,updated_at').eq('user_id',user.id).maybeSingle();
+    if(error)throw error;
+    if(loadId!==accountLoad)return;
+    if(remote){
+      const remoteTime=Date.parse(remote.updated_at)||0;
+      if(local.hasLocal&&localChangedAt>remoteTime){
+        await writeCloud();
+      }else{
+        tasks=Array.isArray(remote.tasks)?remote.tasks:[];
+        S={...defaultSettings(),...(remote.settings||{})};
+        fired={};localChangedAt=remoteTime;
+        storeLocal(remoteTime);applyTheme();syncUI();render();
+        setSync('Synced','Your tasks are saved to your Supabase account.');
+      }
+    }else{
+      const migrationKey='dayplan.guest-migrated';
+      const shouldMigrate=!local.hasLocal&&!localStorage.getItem(migrationKey)&&
+        (guestSnapshot.tasks.length>0||JSON.stringify(guestSnapshot.settings)!==JSON.stringify(defaultSettings()));
+      if(!local.hasLocal){
+        tasks=shouldMigrate?guestSnapshot.tasks:[];
+        S=shouldMigrate?guestSnapshot.settings:defaultSettings();
+        fired=shouldMigrate?guestSnapshot.fired:{};
+        applyTheme();syncUI();render();
+      }
+      await writeCloud();
+      if(shouldMigrate)localStorage.setItem(migrationKey,'1');
+      if(shouldMigrate)setSync('Synced','Your existing tasks were added to your Supabase account.');
+    }
+  }catch(error){
+    if(loadId!==accountLoad)return;
+    console.error('Could not load planner data from Supabase:',error);
+    setSync('Sync paused','Could not load your cloud tasks. Your saved tasks on this device are unchanged.');
+  }finally{
+    if(loadId===accountLoad){$('main').inert=false;$('main').removeAttribute('aria-busy')}
+  }
 }
-let tries=0;
-(function go(){if(window.claude&&claude.use)initSync();else if(++tries<20)setTimeout(go,300);else setSync('off')})();
+async function refreshCloud(){
+  if(!cloudClient||!activeUser)return;
+  const user=activeUser;
+  try{
+    const {data:remote,error}=await cloudClient.from('planner_data')
+      .select('tasks,settings,updated_at').eq('user_id',user.id).maybeSingle();
+    if(error)throw error;
+    if(activeUser?.id!==user.id)return;
+    if(!remote)return;
+    const remoteTime=Date.parse(remote.updated_at)||0;
+    if(remoteTime>localChangedAt){
+      tasks=Array.isArray(remote.tasks)?remote.tasks:[];
+      S={...defaultSettings(),...(remote.settings||{})};
+      fired={};localChangedAt=remoteTime;storeLocal(remoteTime);
+      applyTheme();syncUI();render();
+      setSync('Synced','Your tasks are saved to your Supabase account.');
+    }else if(localChangedAt>remoteTime){
+      await writeCloud();
+    }
+  }catch(error){
+    console.error('Could not refresh planner data:',error);
+    setSync('Sync paused','Could not refresh your cloud tasks. Your saved tasks on this device are unchanged.');
+  }
+}
+function setAuthMessage(message){$('authMsg').textContent=message}
+async function submitAuth(mode){
+  if(!cloudClient){setAuthMessage('Sign-in is not configured yet. Check the Supabase settings in Vercel.');return}
+  const email=$('authEmail').value.trim(),password=$('authPassword').value;
+  setAuthMessage(mode==='signup'?'Creating your account…':'Signing in…');
+  try{
+    const result=mode==='signup'
+      ?await cloudClient.auth.signUp({email,password})
+      :await cloudClient.auth.signInWithPassword({email,password});
+    if(result.error)throw result.error;
+    if(mode==='signup'&&!result.data.session){
+      setAuthMessage('Check your email to confirm your account, then sign in.');
+    }else{
+      setAuthMessage(mode==='signup'?'Account created.':'Signed in.');
+      $('accountSheet').close();
+    }
+  }catch(error){
+    console.error('Account request failed:',error);
+    setAuthMessage(error.message||'Could not complete the account request. Please try again.');
+  }
+}
+$('accountBtn').onclick=()=>{$('authMsg').textContent='';$('accountSheet').showModal()};
+$('closeAccount').onclick=()=>$('accountSheet').close();
+$('accountSheet').addEventListener('click',e=>{if(e.target===$('accountSheet'))$('accountSheet').close()});
+$('authForm').addEventListener('submit',e=>{e.preventDefault();submitAuth('signin')});
+$('signUpBtn').onclick=()=>submitAuth('signup');
+$('signOutBtn').onclick=async()=>{
+  if(!cloudClient)return;
+  const {error}=await cloudClient.auth.signOut();
+  if(error){console.error('Could not sign out:',error);setAuthMessage('Could not sign out. Please try again.')}
+};
+async function initCloud(){
+  try{
+    if(!window.supabase?.createClient)throw new Error('Supabase client library did not load.');
+    const response=await fetch('/api/config',{cache:'no-store'});
+    const config=await response.json();
+    if(!response.ok)throw new Error(config.error||'Supabase is not configured in Vercel.');
+    cloudClient=window.supabase.createClient(config.url,config.anonKey);
+    const {data,error}=await cloudClient.auth.getSession();
+    if(error)throw error;
+    const guestSnapshot={tasks:tasks.slice(),settings:{...S},fired:{...fired}};
+    await applyAccount(data.session?.user||null,guestSnapshot);
+    cloudClient.auth.onAuthStateChange((_event,session)=>{
+      const currentGuest=activeUser?guestSnapshot:{tasks:tasks.slice(),settings:{...S},fired:{...fired}};
+      setTimeout(()=>applyAccount(session?.user||null,currentGuest).catch(error=>{
+        console.error('Could not load account data:',error);
+        setSync('Sync paused','Could not load your account data. Your saved tasks on this device are unchanged.');
+      }),0);
+    });
+  }catch(error){
+    console.error('Could not initialize Supabase sign-in:',error);
+    setSync('Sign-in unavailable','Could not connect to Supabase. Check the Vercel environment variables and deployment.');
+  }
+}
+window.addEventListener('online',()=>{if(activeUser)push()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&activeUser)refreshCloud()});
+setInterval(()=>{if(activeUser)refreshCloud()},30000);
+initCloud();
 setInterval(()=>{render();check()},20000);
 applyTheme();syncUI();render();check();
 if('serviceWorker' in navigator){
