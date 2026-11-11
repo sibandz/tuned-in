@@ -331,6 +331,69 @@ button{-webkit-tap-highlight-color:transparent}
   @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--surface:rgba(35,41,38,.94)}}
   :root[data-theme="dark"]{--surface:rgba(35,41,38,.94)}
 }
+@media(min-width:1024px){
+  main{
+    max-width:1320px;padding:40px 48px 72px;
+    grid-template-columns:minmax(280px,.85fr) minmax(0,1.15fr);
+    column-gap:clamp(40px,5vw,72px);row-gap:0;
+  }
+  .top{grid-row:1;margin-bottom:8px}
+  header{grid-row:2;margin-bottom:28px;align-items:center}
+  h1{font-size:82px}
+  .sub{font-size:18px}
+  .top button,.top #accountBtn,.top #viewBtn{height:46px}
+  .top button{width:46px}
+  .top #viewBtn{font-size:15px}
+  .week{grid-column:1;grid-row:3;gap:8px;padding:12px;margin:0}
+  .day{padding:10px 0 8px}
+  .day b{font-size:18px}
+  .mc{min-height:88px}
+  .add{grid-column:2;grid-row:3;align-self:start;gap:10px;margin:0 0 16px}
+  .add input{padding:14px 18px;font-size:17px}
+  .add button{min-width:76px;padding:0 20px;font-size:16px}
+  #view{grid-column:2;grid-row:3;align-self:start;margin:72px 0 0}
+  .next{padding:26px;margin-bottom:18px}
+  .next small{font-size:15px}
+  .next p{font-size:42px}
+  .next button{font-size:15px}
+  #view li{min-height:76px;padding:16px 18px;gap:16px}
+  .chk{width:30px;height:30px}
+  .t{font-size:18px}
+  .time{font-size:14px}
+  .acts button{font-size:14px}
+  .count{font-size:14px}
+  .hint{grid-column:1;grid-row:4;align-self:start;margin:22px 0 0;font-size:14px}
+}
+@media(max-width:1023px){
+  main{display:block;max-width:760px;padding:26px clamp(18px,5vw,36px) 56px}
+  h1{font-size:clamp(52px,8vw,72px)}
+  .sub{font-size:16px}
+  .top{margin:0 0 12px}
+  .top button,.top #accountBtn,.top #viewBtn{height:44px}
+  .top button{width:44px}
+  .top #viewBtn{font-size:15px}
+  header{align-items:center;margin-bottom:18px}
+  .nav{gap:6px}
+  .nav button{width:44px;height:44px;font-size:20px}
+  .week{padding:10px;margin-bottom:18px}
+  .day{padding:9px 0 7px}
+  .day b{font-size:17px}
+  .mc{min-height:82px}
+  .add{gap:8px;margin-bottom:16px}
+  .add input{padding:14px 16px;font-size:16px}
+  .add button{min-width:68px;padding:0 16px;font-size:16px}
+  .next{padding:22px;margin-bottom:16px}
+  .next small{font-size:14px}
+  .next p{font-size:34px}
+  .next button{font-size:14px}
+  #view li{min-height:68px;padding:14px 16px;gap:12px}
+  .chk{width:28px;height:28px}
+  .t{font-size:17px}
+  .time{font-size:14px}
+  .acts button{font-size:13px}
+  .count{font-size:14px}
+  .hint{margin-top:20px;font-size:14px}
+}
 </style>
 </head>
 <body>
